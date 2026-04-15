@@ -67,3 +67,63 @@ if st.sidebar.button("Analyse Portfolio"):
                 "Worst Day (%)": (daily_returns.min() * 100).round(2),
             })
             st.dataframe(summary)
+            # --- SECTION 4: RISK METRICS ---
+            st.subheader("⚠️ Risk Metrics")
+
+            # Sharpe Ratio (assuming risk free rate of 4.5% annually)
+            risk_free_rate = 0.045 / 252
+            sharpe_ratio = ((daily_returns.mean() - risk_free_rate) / daily_returns.std() * np.sqrt(252)).round(2)
+
+            # Max Drawdown
+            def max_drawdown(returns):
+                cumulative = (1 + returns).cumprod()
+                rolling_max = cumulative.cummax()
+                drawdown = (cumulative - rolling_max) / rolling_max
+                return drawdown.min()
+
+            max_dd = (daily_returns.apply(max_drawdown) * 100).round(2)
+
+            # Beta (against S&P 500)
+            sp500 = yf.download("^GSPC", start=start_date, end=end_date)["Close"]
+            sp500_returns = sp500.pct_change().dropna()
+
+            betas = {}
+            for ticker in daily_returns.columns:
+                # Align dates
+                aligned = pd.concat([daily_returns[ticker], sp500_returns], axis=1).dropna()
+                aligned.columns = ["stock", "market"]
+                covariance = aligned.cov().iloc[0, 1]
+                market_variance = aligned["market"].var()
+                betas[ticker] = round(covariance / market_variance, 2)
+
+            beta_series = pd.Series(betas)
+
+            # Display risk metrics table
+            risk_metrics = pd.DataFrame({
+                "Sharpe Ratio": sharpe_ratio,
+                "Max Drawdown (%)": max_dd,
+                "Beta (vs S&P 500)": beta_series
+            })
+
+            st.dataframe(risk_metrics)
+
+            # Explain the metrics simply
+            st.markdown("""
+            **Understanding the metrics:**
+            - **Sharpe Ratio** — Above 1.0 is good, above 2.0 is excellent. Higher = better return for the risk taken
+            - **Max Drawdown** — The worst % loss from peak to bottom. Closer to 0 is better
+            - **Beta** — Above 1.0 means the stock is more volatile than the market. Below 1.0 means more stable
+            """)
+
+            # --- SECTION 5: MAX DRAWDOWN CHART ---
+            st.subheader("📉 Drawdown Over Time")
+
+            drawdown_df = pd.DataFrame()
+            for ticker in daily_returns.columns:
+                cumulative = (1 + daily_returns[ticker]).cumprod()
+                rolling_max = cumulative.cummax()
+                drawdown_df[ticker] = (cumulative - rolling_max) / rolling_max * 100
+
+            fig3 = px.line(drawdown_df, title="Drawdown Over Time (%)")
+            fig3.update_layout(xaxis_title="Date", yaxis_title="Drawdown (%)")
+            st.plotly_chart(fig3, use_container_width=True)
