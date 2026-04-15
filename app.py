@@ -1,7 +1,9 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Portfolio Risk Dashboard", layout="wide")
 st.title("📊 Stock Portfolio Risk & Performance Dashboard")
@@ -28,14 +30,40 @@ if st.sidebar.button("Analyse Portfolio"):
     if raw_data.empty:
         st.error("No data found. Check your tickers and try again.")
     else:
-        st.success("Data loaded successfully!")
+        # Drop columns that are completely empty
+        raw_data = raw_data.dropna(axis=1, how='all')
 
-        # Show raw closing prices
-        st.subheader("📈 Closing Prices Over Time")
-        fig = px.line(raw_data, title="Stock Closing Prices")
-        fig.update_layout(xaxis_title="Date", yaxis_title="Price (USD)")
-        st.plotly_chart(fig, use_container_width=True)
+        if raw_data.empty or len(raw_data) < 2:
+            st.error("Data loaded but was empty — likely a connection issue. Try again or switch to a hotspot.")
+        else:
+            st.success("Data loaded successfully!")
 
-        # Show raw data table
-        st.subheader("📋 Raw Data")
-        st.dataframe(raw_data.tail(10))
+            # --- DAILY RETURNS ---
+            daily_returns = raw_data.pct_change().dropna()
+
+            # --- CUMULATIVE RETURNS ---
+            cumulative_returns = (1 + daily_returns).cumprod()
+
+            # --- SECTION 1: CUMULATIVE RETURNS CHART ---
+            st.subheader("📈 Cumulative Returns Over Time")
+            fig1 = px.line(cumulative_returns,
+                           title="Cumulative Returns — How $1 invested grew over time")
+            fig1.update_layout(xaxis_title="Date", yaxis_title="Growth of $1")
+            st.plotly_chart(fig1, use_container_width=True)
+
+            # --- SECTION 2: DAILY RETURNS CHART ---
+            st.subheader("📉 Daily Returns")
+            fig2 = px.line(daily_returns, title="Daily Returns per Stock")
+            fig2.update_layout(xaxis_title="Date", yaxis_title="Daily Return (%)")
+            st.plotly_chart(fig2, use_container_width=True)
+
+            # --- SECTION 3: SUMMARY STATS ---
+            st.subheader("📋 Performance Summary")
+            summary = pd.DataFrame({
+                "Total Return (%)": ((cumulative_returns.iloc[-1] - 1) * 100).round(2),
+                "Avg Daily Return (%)": (daily_returns.mean() * 100).round(4),
+                "Volatility (%)": (daily_returns.std() * 100).round(4),
+                "Best Day (%)": (daily_returns.max() * 100).round(2),
+                "Worst Day (%)": (daily_returns.min() * 100).round(2),
+            })
+            st.dataframe(summary)
