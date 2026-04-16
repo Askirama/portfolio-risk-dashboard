@@ -127,3 +127,34 @@ if st.sidebar.button("Analyse Portfolio"):
             fig3 = px.line(drawdown_df, title="Drawdown Over Time (%)")
             fig3.update_layout(xaxis_title="Date", yaxis_title="Drawdown (%)")
             st.plotly_chart(fig3, use_container_width=True)
+              # --- SECTION 6: CORRELATION HEATMAP ---
+            st.subheader("🔥 Correlation Heatmap")
+
+            correlation_matrix = daily_returns.corr().round(2)
+
+            fig4 = go.Figure(data=go.Heatmap(
+                z=correlation_matrix.values,
+                x=correlation_matrix.columns.tolist(),
+                y=correlation_matrix.columns.tolist(),
+                colorscale="RdYlGn",
+                zmin=-1, zmax=1,
+                text=correlation_matrix.values,
+                texttemplate="%{text}",
+                showscale=True
+            ))
+
+            fig4.update_layout(
+                title="Stock Correlation Matrix — how stocks move together",
+                xaxis_title="Stock",
+                yaxis_title="Stock"
+            )
+
+            st.plotly_chart(fig4, use_container_width=True)
+
+            # Interpretation
+            st.markdown("""
+            **Reading the heatmap:**
+            - 🟢 **Green (close to 1.0)** — stocks move together, low diversification
+            - 🟡 **Yellow (close to 0.0)** — little relationship between stocks
+            - 🔴 **Red (close to -1.0)** — stocks move in opposite directions, great diversification
+            """)
