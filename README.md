@@ -3,7 +3,7 @@
 A professional-grade web application for analysing stock portfolio performance and risk — built with Python and Streamlit.
 
 ## 🔗 Live App
-[Click here to open the dashboard](#) ← we'll update this link after deployment
+[Click here to open the dashboard](https://portfolio-risk-dashboard-nuejmzhld4wi7redkeq7kt.streamlit.app)
 
 ## 📌 What It Does
 Input your stocks, number of shares, buy prices and date range to instantly get:
