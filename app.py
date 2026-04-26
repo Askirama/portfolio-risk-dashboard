@@ -111,11 +111,12 @@ if st.sidebar.button("Analyse Portfolio", key="analyse_btn"):
                 "P&L (%)": pnl_percent
             })
 
-            st.dataframe(pnl_df.style.applymap(
-                lambda x: "color: green" if isinstance(x, (int, float)) and x > 0 else (
-                    "color: red" if isinstance(x, (int, float)) and x < 0 else ""),
-                subset=["P&L ($)", "P&L (%)"]
-            ))
+            def color_pnl(val):
+                if isinstance(val, (int, float)):
+                    return "color: green" if val > 0 else "color: red" if val < 0 else ""
+                return ""
+
+            st.dataframe(pnl_df.style.map(color_pnl, subset=["P&L ($)", "P&L (%)"]))
 
             total_pnl = pnl_dollars.sum()
             total_pnl_pct = ((total_pnl / cost_basis.sum()) * 100).round(2)
