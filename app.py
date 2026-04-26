@@ -252,3 +252,82 @@ if st.sidebar.button("Analyse Portfolio", key="analyse_btn"):
             - 🟡 **Yellow (close to 0.0)** — little relationship
             - 🔴 **Red (close to -1.0)** — opposite movement, great diversification
             """)
+            # ── SECTION 8: PDF EXPORT ───────────────────────────────────
+            st.subheader("📄 Export Portfolio Report")
+
+            def generate_pdf(overview, pnl_df, risk_metrics, total_value, total_pnl, total_pnl_pct):
+                buffer = io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4,
+                                        leftMargin=2*cm, rightMargin=2*cm,
+                                        topMargin=2*cm, bottomMargin=2*cm)
+                styles = getSampleStyleSheet()
+                story = []
+
+                story.append(Paragraph("Portfolio Risk & Performance Report", styles['Title']))
+                story.append(Paragraph(f"Generated: {datetime.now().strftime('%d %B %Y, %H:%M')}", styles['Normal']))
+                story.append(Spacer(1, 0.5*cm))
+
+                story.append(Paragraph("Portfolio Summary", styles['Heading2']))
+                story.append(Paragraph(f"Total Portfolio Value: ${total_value:,.2f}", styles['Normal']))
+                story.append(Paragraph(f"Total P&L: ${total_pnl:,.2f} ({total_pnl_pct}%)", styles['Normal']))
+                story.append(Spacer(1, 0.3*cm))
+
+                story.append(Paragraph("Portfolio Overview", styles['Heading2']))
+                overview_reset = overview.reset_index()
+                overview_data = [overview_reset.columns.tolist()] + overview_reset.values.tolist()
+                overview_table = Table(overview_data, repeatRows=1)
+                overview_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F5F5F5')]),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ]))
+                story.append(overview_table)
+                story.append(Spacer(1, 0.3*cm))
+
+                story.append(Paragraph("Profit & Loss", styles['Heading2']))
+                pnl_reset = pnl_df.reset_index()
+                pnl_data = [pnl_reset.columns.tolist()] + pnl_reset.values.tolist()
+                pnl_table = Table(pnl_data, repeatRows=1)
+                pnl_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F5F5F5')]),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ]))
+                story.append(pnl_table)
+                story.append(Spacer(1, 0.3*cm))
+
+                story.append(Paragraph("Risk Metrics", styles['Heading2']))
+                risk_reset = risk_metrics.reset_index()
+                risk_data = [risk_reset.columns.tolist()] + risk_reset.values.tolist()
+                risk_table = Table(risk_data, repeatRows=1)
+                risk_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1A3A5C')),
+                    ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (-1,-1), 8),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F5F5F5')]),
+                    ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ]))
+                story.append(risk_table)
+
+                doc.build(story)
+                buffer.seek(0)
+                return buffer
+
+            pdf_buffer = generate_pdf(overview, pnl_df, risk_metrics, total_value, total_pnl, total_pnl_pct)
+
+            st.download_button(
+                label="📥 Download Portfolio Report (PDF)",
+                data=pdf_buffer,
+                file_name=f"portfolio_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf"
+            )
