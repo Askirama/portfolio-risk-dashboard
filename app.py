@@ -8,56 +8,136 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Portfolio Risk Dashboard", layout="wide")
 st.title("📊 Stock Portfolio Risk & Performance Dashboard")
 
-# --- USER INPUT ---
+# --- SIDEBAR INPUT ---
 st.sidebar.header("Build Your Portfolio")
 
-tickers_input = st.sidebar.text_input(
-    "Enter stock tickers (comma separated)",
-    value="AAPL, MSFT, TSLA"
+st.sidebar.markdown("Enter each stock on a new line as: **TICKER, SHARES**")
+portfolio_input = st.sidebar.text_area(
+    "Your Portfolio",
+    value="AAPL, 50\nMSFT, 30\nTSLA, 20",
+    height=150
+)
+
+st.sidebar.markdown("Enter your buy price for each stock: **TICKER, BUY PRICE**")
+buy_price_input = st.sidebar.text_area(
+    "Buy Prices",
+    value="AAPL, 150\nMSFT, 280\nTSLA, 200",
+    height=150
 )
 
 start_date = st.sidebar.date_input("Start Date", value=pd.to_datetime("2023-01-01"))
 end_date = st.sidebar.date_input("End Date", value=pd.to_datetime("today"))
 
-# --- FETCH DATA ---
-if st.sidebar.button("Analyse Portfolio"):
-    tickers = [t.strip().upper() for t in tickers_input.split(",")]
+if st.sidebar.button("Analyse Portfolio", key="analyse_btn"):
 
-    st.subheader(f"Analysing: {', '.join(tickers)}")
+    # --- PARSE PORTFOLIO INPUT ---
+    portfolio = {}
+    errors = []
+    for line in portfolio_input.strip().split("\n"):
+        try:
+            parts = line.strip().split(",")
+            ticker = parts[0].strip().upper()
+            shares = float(parts[1].strip().replace(',', ''))
+            portfolio[ticker] = shares
+        except:
+            errors.append(line)
 
-    raw_data = yf.download(tickers, start=start_date, end=end_date)["Close"]
+    # --- PARSE BUY PRICES ---
+    buy_prices = {}
+    for line in buy_price_input.strip().split("\n"):
+        try:
+            parts = line.strip().split(",")
+            ticker = parts[0].strip().upper()
+            price = float(parts[1].strip().replace(',', ''))
+            buy_prices[ticker] = price
+        except:
+            pass
 
-    if raw_data.empty:
-        st.error("No data found. Check your tickers and try again.")
+    if errors:
+        st.error(f"Couldn't parse these lines: {errors} — make sure format is TICKER, SHARES")
+    elif not portfolio:
+        st.error("No valid stocks entered.")
     else:
-        # Drop columns that are completely empty
+        tickers = list(portfolio.keys())
+        shares_series = pd.Series(portfolio)
+        buy_price_series = pd.Series(buy_prices)
+
+        st.subheader(f"Analysing: {', '.join(tickers)}")
+
+        # --- FETCH DATA ---
+        raw_data = yf.download(tickers, start=start_date, end=end_date)["Close"]
+
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            raw_data.columns = raw_data.columns.get_level_values(0)
+
         raw_data = raw_data.dropna(axis=1, how='all')
 
         if raw_data.empty or len(raw_data) < 2:
-            st.error("Data loaded but was empty — likely a connection issue. Try again or switch to a hotspot.")
+            st.error("Data loaded but was empty — likely a connection issue. Try again or switch to hotspot.")
         else:
             st.success("Data loaded successfully!")
 
-            # --- DAILY RETURNS ---
-            daily_returns = raw_data.pct_change().dropna()
+            # --- CURRENT PRICES & PORTFOLIO VALUE ---
+            current_prices = raw_data.iloc[-1]
+            holding_values = shares_series * current_prices
+            total_value = holding_values.sum()
+            weights = (holding_values / total_value * 100).round(2)
 
-            # --- CUMULATIVE RETURNS ---
+            # ── SECTION 1: PORTFOLIO OVERVIEW ──────────────────────────
+            st.subheader("💼 Portfolio Overview")
+            overview = pd.DataFrame({
+                "Shares Owned": shares_series,
+                "Current Price ($)": current_prices.round(2),
+                "Holding Value ($)": holding_values.round(2),
+                "Portfolio Weight (%)": weights
+            })
+            st.dataframe(overview)
+            st.metric(label="💰 Total Portfolio Value", value=f"${total_value:,.2f}")
+
+            # ── SECTION 2: PROFIT & LOSS ────────────────────────────────
+            st.subheader("📊 Profit & Loss Summary")
+
+            cost_basis = buy_price_series * shares_series
+            current_value = current_prices * shares_series
+            pnl_dollars = (current_value - cost_basis).round(2)
+            pnl_percent = ((pnl_dollars / cost_basis) * 100).round(2)
+
+            pnl_df = pd.DataFrame({
+                "Buy Price ($)": buy_price_series.round(2),
+                "Current Price ($)": current_prices.round(2),
+                "Cost Basis ($)": cost_basis.round(2),
+                "Current Value ($)": current_value.round(2),
+                "P&L ($)": pnl_dollars,
+                "P&L (%)": pnl_percent
+            })
+
+            st.dataframe(pnl_df.style.applymap(
+                lambda x: "color: green" if isinstance(x, (int, float)) and x > 0 else (
+                    "color: red" if isinstance(x, (int, float)) and x < 0 else ""),
+                subset=["P&L ($)", "P&L (%)"]
+            ))
+
+            total_pnl = pnl_dollars.sum()
+            total_pnl_pct = ((total_pnl / cost_basis.sum()) * 100).round(2)
+
+            col1, col2 = st.columns(2)
+            col1.metric(label="💰 Total P&L ($)", value=f"${total_pnl:,.2f}", delta=f"{total_pnl_pct}%")
+            col2.metric(label="📈 Total Return (%)", value=f"{total_pnl_pct}%", delta=f"${total_pnl:,.2f}")
+
+            # ── SECTION 3: PERFORMANCE ──────────────────────────────────
+            daily_returns = raw_data.pct_change().dropna()
             cumulative_returns = (1 + daily_returns).cumprod()
 
-            # --- SECTION 1: CUMULATIVE RETURNS CHART ---
             st.subheader("📈 Cumulative Returns Over Time")
-            fig1 = px.line(cumulative_returns,
-                           title="Cumulative Returns — How $1 invested grew over time")
+            fig1 = px.line(cumulative_returns, title="Cumulative Returns — How $1 invested grew over time")
             fig1.update_layout(xaxis_title="Date", yaxis_title="Growth of $1")
             st.plotly_chart(fig1, use_container_width=True)
 
-            # --- SECTION 2: DAILY RETURNS CHART ---
             st.subheader("📉 Daily Returns")
             fig2 = px.line(daily_returns, title="Daily Returns per Stock")
             fig2.update_layout(xaxis_title="Date", yaxis_title="Daily Return (%)")
             st.plotly_chart(fig2, use_container_width=True)
 
-            # --- SECTION 3: SUMMARY STATS ---
             st.subheader("📋 Performance Summary")
             summary = pd.DataFrame({
                 "Total Return (%)": ((cumulative_returns.iloc[-1] - 1) * 100).round(2),
@@ -67,14 +147,42 @@ if st.sidebar.button("Analyse Portfolio"):
                 "Worst Day (%)": (daily_returns.min() * 100).round(2),
             })
             st.dataframe(summary)
-            # --- SECTION 4: RISK METRICS ---
+
+            # ── SECTION 4: CONCENTRATION RISK ──────────────────────────
+            st.subheader("🎯 Concentration Risk Check")
+            weight_df = pd.DataFrame({
+                'Stock': weights.index,
+                'Weight (%)': weights.values
+            }).sort_values('Weight (%)', ascending=False)
+            st.dataframe(weight_df, use_container_width=True)
+
+            alerts = []
+            for stock, weight in weights.items():
+                if weight > 50:
+                    alerts.append(f"🔴 **CRITICAL:** {stock} makes up {weight:.1f}% — extreme single-stock risk")
+                elif weight > 30:
+                    alerts.append(f"🟡 **WARNING:** {stock} makes up {weight:.1f}% — high concentration")
+
+            top_3_weight = weights.nlargest(3).sum()
+            if top_3_weight > 80:
+                alerts.append(f"⚠️ Top 3 stocks represent {top_3_weight:.1f}% of portfolio — low diversification")
+            if len(weights) == 1:
+                alerts.append("🔴 **CRITICAL:** Single-stock portfolio — no diversification")
+            elif len(weights) == 2:
+                alerts.append("🟡 **WARNING:** Only 2 stocks — consider adding more")
+
+            if alerts:
+                st.error("\n\n".join(alerts))
+                st.caption("💡 A well-diversified portfolio typically has no single stock > 20%.")
+            else:
+                st.success("✅ No concentration issues — your portfolio appears well-balanced")
+
+            # ── SECTION 5: RISK METRICS ─────────────────────────────────
             st.subheader("⚠️ Risk Metrics")
 
-            # Sharpe Ratio (assuming risk free rate of 4.5% annually)
             risk_free_rate = 0.045 / 252
             sharpe_ratio = ((daily_returns.mean() - risk_free_rate) / daily_returns.std() * np.sqrt(252)).round(2)
 
-            # Max Drawdown
             def max_drawdown(returns):
                 cumulative = (1 + returns).cumprod()
                 rolling_max = cumulative.cummax()
@@ -83,13 +191,13 @@ if st.sidebar.button("Analyse Portfolio"):
 
             max_dd = (daily_returns.apply(max_drawdown) * 100).round(2)
 
-            # Beta (against S&P 500)
             sp500 = yf.download("^GSPC", start=start_date, end=end_date)["Close"]
             sp500_returns = sp500.pct_change().dropna()
+            if isinstance(sp500_returns, pd.DataFrame):
+                sp500_returns = sp500_returns.iloc[:, 0]
 
             betas = {}
             for ticker in daily_returns.columns:
-                # Align dates
                 aligned = pd.concat([daily_returns[ticker], sp500_returns], axis=1).dropna()
                 aligned.columns = ["stock", "market"]
                 covariance = aligned.cov().iloc[0, 1]
@@ -97,27 +205,21 @@ if st.sidebar.button("Analyse Portfolio"):
                 betas[ticker] = round(covariance / market_variance, 2)
 
             beta_series = pd.Series(betas)
-
-            # Display risk metrics table
             risk_metrics = pd.DataFrame({
                 "Sharpe Ratio": sharpe_ratio,
                 "Max Drawdown (%)": max_dd,
                 "Beta (vs S&P 500)": beta_series
             })
-
             st.dataframe(risk_metrics)
-
-            # Explain the metrics simply
             st.markdown("""
             **Understanding the metrics:**
-            - **Sharpe Ratio** — Above 1.0 is good, above 2.0 is excellent. Higher = better return for the risk taken
-            - **Max Drawdown** — The worst % loss from peak to bottom. Closer to 0 is better
-            - **Beta** — Above 1.0 means the stock is more volatile than the market. Below 1.0 means more stable
+            - **Sharpe Ratio** — Above 1.0 is good, above 2.0 is excellent
+            - **Max Drawdown** — Worst % loss from peak to bottom. Closer to 0 is better
+            - **Beta** — Above 1.0 means more volatile than the market
             """)
 
-            # --- SECTION 5: MAX DRAWDOWN CHART ---
+            # ── SECTION 6: DRAWDOWN CHART ───────────────────────────────
             st.subheader("📉 Drawdown Over Time")
-
             drawdown_df = pd.DataFrame()
             for ticker in daily_returns.columns:
                 cumulative = (1 + daily_returns[ticker]).cumprod()
@@ -127,11 +229,10 @@ if st.sidebar.button("Analyse Portfolio"):
             fig3 = px.line(drawdown_df, title="Drawdown Over Time (%)")
             fig3.update_layout(xaxis_title="Date", yaxis_title="Drawdown (%)")
             st.plotly_chart(fig3, use_container_width=True)
-              # --- SECTION 6: CORRELATION HEATMAP ---
+
+            # ── SECTION 7: CORRELATION HEATMAP ─────────────────────────
             st.subheader("🔥 Correlation Heatmap")
-
             correlation_matrix = daily_returns.corr().round(2)
-
             fig4 = go.Figure(data=go.Heatmap(
                 z=correlation_matrix.values,
                 x=correlation_matrix.columns.tolist(),
@@ -142,19 +243,11 @@ if st.sidebar.button("Analyse Portfolio"):
                 texttemplate="%{text}",
                 showscale=True
             ))
-
-            fig4.update_layout(
-                title="Stock Correlation Matrix — how stocks move together",
-                xaxis_title="Stock",
-                yaxis_title="Stock"
-            )
-
+            fig4.update_layout(title="Stock Correlation Matrix")
             st.plotly_chart(fig4, use_container_width=True)
-
-            # Interpretation
             st.markdown("""
             **Reading the heatmap:**
             - 🟢 **Green (close to 1.0)** — stocks move together, low diversification
-            - 🟡 **Yellow (close to 0.0)** — little relationship between stocks
-            - 🔴 **Red (close to -1.0)** — stocks move in opposite directions, great diversification
+            - 🟡 **Yellow (close to 0.0)** — little relationship
+            - 🔴 **Red (close to -1.0)** — opposite movement, great diversification
             """)
