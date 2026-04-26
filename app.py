@@ -6,6 +6,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
 
 st.set_page_config(page_title="Portfolio Risk Dashboard", layout="wide")
 st.title("📊 Stock Portfolio Risk & Performance Dashboard")
